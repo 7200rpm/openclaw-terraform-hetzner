@@ -37,7 +37,15 @@ This project deploys cloud infrastructure. Please be aware of:
    - Default opens SSH (port 22) to `0.0.0.0/0` — restrict before production
    - **Minimum:** restrict to your IP via `TF_VAR_ssh_allowed_cidrs`
    - **Best:** enable Tailscale (see section 3) and set `TF_VAR_ssh_allowed_cidrs='[]'` so SSH is invisible to the public internet entirely
-   - Hetzner Ubuntu images disable password authentication by default; the VPS uses key-only auth
+   - **Hardening (applied automatically via cloud-init):**
+     - `PasswordAuthentication no` — key-only auth
+     - `PermitRootLogin no` — root login completely disabled
+     - `MaxAuthTries 3` — limits brute-force attempts per connection
+     - `AuthenticationMethods publickey` — only public key auth allowed
+     - `X11Forwarding no` — X11 attack surface removed
+     - `ClientAliveInterval 300` / `ClientAliveCountMax 2` — idle sessions terminated after 10 minutes
+     - Drop-in config at `/etc/ssh/sshd_config.d/99-clawstaffing-hardening.conf`
+   - **fail2ban** monitors SSH and bans IPs after 5 failed attempts for 1 hour
    - Protect your SSH private key — it is the only credential that grants access
 
 3. **Tailscale VPN (Recommended)**
@@ -56,10 +64,11 @@ This project deploys cloud infrastructure. Please be aware of:
 
    Tailscale is installed automatically on first boot when `TF_VAR_enable_tailscale=true` is set. See [Firewall Rules](README.md#firewall-rules) in the README for the step-by-step setup.
 
-4. **Firewall Rules**
-   - Inbound by default: SSH (22/tcp) only — no HTTP/HTTPS exposed at the Hetzner level
-   - With Tailscale: additionally opens UDP 41641 for WireGuard; SSH port can then be closed entirely
+4. **Firewall Rules** (dual-layer: Hetzner Cloud Firewall + UFW)
+   - Inbound: SSH (22/tcp), HTTP (80/tcp for ACME), HTTPS (443/tcp for Caddy), Tailscale (41641/udp)
    - Gateway binds to `127.0.0.1` (localhost only) and is never directly reachable from the internet
+   - Caddy handles TLS termination and reverse-proxies to the gateway
+   - With Tailscale: SSH port can be closed entirely via `TF_VAR_ssh_allowed_cidrs='[]'`
    - Review `infra/terraform/modules/hetzner-vps/main.tf` for the full rule set
 
 5. **Cloud-Init Scripts**
@@ -128,14 +137,14 @@ This project deploys cloud infrastructure. Please be aware of:
 
 - Cloud-init runs with root privileges (standard for server provisioning)
 - SSH access is initially broad (users should narrow this per the README)
-- Gateway uses API tokens for authentication (consider adding TLS)
+- TLS is handled by Caddy with automatic Let's Encrypt certificate provisioning
+- Gateway tokens provide application-level authentication over HTTPS
 
 ### Out of Scope
 
 This project does NOT provide:
-- DDoS protection (use Hetzner's DDoS protection or Cloudflare)
+- DDoS protection (use Hetzner's DDoS protection or Cloudflare proxy mode)
 - Automated security patching (you must update OpenClaw manually)
-- Intrusion detection (consider adding fail2ban)
 - Backup encryption (implement separately if needed)
 - Automatic security updates (unattended-upgrades)
 
