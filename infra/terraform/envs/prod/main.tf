@@ -79,6 +79,7 @@ module "vps" {
 
   project_name        = var.project_name
   environment         = "prod"
+  customer_slug       = var.customer_slug
   ssh_key_fingerprint = var.ssh_key_fingerprint
   ssh_allowed_cidrs   = var.ssh_allowed_cidrs
   server_type         = var.server_type

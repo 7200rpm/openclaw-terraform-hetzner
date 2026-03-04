@@ -7,6 +7,12 @@ variable "project_name" {
   type        = string
 }
 
+variable "customer_slug" {
+  description = "Customer slug for unique resource naming (e.g., 'vinny')"
+  type        = string
+  default     = ""
+}
+
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string

@@ -28,8 +28,12 @@ data "hcloud_ssh_key" "main" {
 # Firewall
 # ============================================
 
+locals {
+  name_suffix = var.customer_slug != "" ? "${var.project_name}-${var.customer_slug}" : "${var.project_name}-${var.environment}"
+}
+
 resource "hcloud_firewall" "main" {
-  name = "${var.project_name}-${var.environment}-firewall"
+  name = "${local.name_suffix}-firewall"
 
   # Allow SSH from specified CIDRs (for bootstrap/admin via public IP)
   dynamic "rule" {
@@ -96,7 +100,7 @@ resource "hcloud_firewall" "main" {
 # ============================================
 
 resource "hcloud_server" "main" {
-  name        = "${var.project_name}-${var.environment}"
+  name        = local.name_suffix
   server_type = var.server_type
   image       = var.server_image
   location    = var.server_location
