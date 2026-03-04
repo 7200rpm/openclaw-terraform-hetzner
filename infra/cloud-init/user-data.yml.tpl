@@ -3,6 +3,11 @@
 # -----------------------------------------------------------------------------
 # OpenClaw VPS Cloud-Init Configuration
 # -----------------------------------------------------------------------------
+# Security baseline for ClawStaffing managed instances:
+#   - SSH: key-only auth, no root login, rate-limited (fail2ban)
+#   - UFW: deny all inbound except SSH, HTTP/S, Tailscale
+#   - Tailscale: enabled by default for admin access
+#   - Caddy reverse proxy handles TLS termination (ports 80/443)
 
 package_update: true
 package_upgrade: true
@@ -17,6 +22,7 @@ packages:
   - jq
   - ufw
   - software-properties-common
+  - fail2ban
 
 # -----------------------------------------------------------------------------
 # Write Files
@@ -33,6 +39,33 @@ write_files:
           "max-file": "3"
         }
       }
+    permissions: '0644'
+
+  # SSH hardening — drop-in config (overrides Ubuntu defaults)
+  - path: /etc/ssh/sshd_config.d/99-clawstaffing-hardening.conf
+    content: |
+      # ClawStaffing SSH Hardening
+      PasswordAuthentication no
+      PermitRootLogin no
+      MaxAuthTries 3
+      PubkeyAuthentication yes
+      AuthenticationMethods publickey
+      X11Forwarding no
+      PermitEmptyPasswords no
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+    permissions: '0644'
+
+  # fail2ban SSH jail
+  - path: /etc/fail2ban/jail.d/sshd.conf
+    content: |
+      [sshd]
+      enabled = true
+      port = ssh
+      filter = sshd
+      maxretry = 5
+      bantime = 3600
+      findtime = 600
     permissions: '0644'
 
 # -----------------------------------------------------------------------------
@@ -56,6 +89,13 @@ runcmd:
   - chmod 600 /home/${app_user}/.ssh/authorized_keys
 
   # -----------------------------------------------------------------------------
+  # Apply SSH Hardening
+  # -----------------------------------------------------------------------------
+  - systemctl restart sshd
+  - systemctl enable fail2ban
+  - systemctl start fail2ban
+
+  # -----------------------------------------------------------------------------
   # Install Docker
   # -----------------------------------------------------------------------------
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -72,18 +112,18 @@ runcmd:
 
 %{ if enable_tailscale ~}
   # -----------------------------------------------------------------------------
-  # Install Tailscale VPN
+  # Install Tailscale VPN (admin access)
   # -----------------------------------------------------------------------------
   - curl -fsSL https://tailscale.com/install.sh | sh
   - systemctl enable --now tailscaled
   - sleep 2
 
 %{ if tailscale_auth_key != "" ~}
-  # Authenticate Tailscale automatically
-  - tailscale up --auth-key="${tailscale_auth_key}" --hostname="openclaw-prod"
+  # Authenticate Tailscale with instance-specific hostname + Tailscale SSH
+  - tailscale up --auth-key="${tailscale_auth_key}" --hostname="${tailscale_hostname}" --ssh
 %{ else ~}
-  # Tailscale installed but not authenticated - run manually: sudo tailscale up
-  - echo "[Tailscale] Auth key not provided. Run manually: sudo tailscale up"
+  # Tailscale installed but not authenticated
+  - 'echo "[Tailscale] Auth key not provided. Run manually: sudo tailscale up"'
 %{ endif ~}
 %{ endif ~}
 
@@ -93,6 +133,8 @@ runcmd:
   - ufw default deny incoming
   - ufw default allow outgoing
   - ufw allow ssh
+  - ufw allow 80/tcp comment 'HTTP (ACME challenges)'
+  - ufw allow 443/tcp comment 'HTTPS (Caddy)'
 %{ if enable_tailscale ~}
   - ufw allow 41641/udp comment 'Tailscale'
 %{ endif ~}
@@ -104,8 +146,8 @@ runcmd:
   - mkdir -p ${app_directory}
   - mkdir -p ${app_directory}/workspace
   - chown -R 1000:1000 ${app_directory}
-  - chmod 755 ${app_directory}
-  - chmod 755 ${app_directory}/workspace
+  - chmod 700 ${app_directory}
+  - chmod 700 ${app_directory}/workspace
 
   # -----------------------------------------------------------------------------
   # Final cleanup

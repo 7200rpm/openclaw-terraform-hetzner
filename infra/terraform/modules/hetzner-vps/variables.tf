@@ -79,7 +79,7 @@ variable "cloud_init_user_data" {
 # ============================================
 
 variable "enable_tailscale" {
-  description = "Install and configure Tailscale VPN"
+  description = "Install and configure Tailscale VPN for admin access"
   type        = bool
-  default     = false
+  default     = true
 }

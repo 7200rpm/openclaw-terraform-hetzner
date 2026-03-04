@@ -1,13 +1,18 @@
 # =============================================================================
-# OpenClaw Infrastructure Makefile
+# ClawStaffing Infrastructure Makefile
 # =============================================================================
 # Usage: make <target> [ENV=prod]
+#
+# Security model:
+#   - Customer access: HTTPS via Caddy reverse proxy (auto-TLS)
+#   - Admin access: SSH via Tailscale (or public IP with key-only auth)
+#   - Gateway: bound to localhost only, proxied by Caddy
 
 SHELL := /bin/bash
 .PHONY: init plan apply destroy ssh ssh-root tunnel output ip fmt validate clean help \
         bootstrap deploy push-env push-config setup-auth backup-now restore logs status \
         tailscale-status tailscale-ip tailscale-up tailscale-serve \
-        workspace-sync
+        workspace-sync dashboard
 
 # Default target
 .DEFAULT_GOAL := help
@@ -68,9 +73,9 @@ ssh: ## SSH into the server as the openclaw user
 	@echo -e "$(GREEN)[INFO]$(NC) Connecting to $(SERVER_IP)..."
 	ssh openclaw@$(SERVER_IP)
 
-ssh-root: ## SSH into the server as root
-	@echo -e "$(YELLOW)[WARN]$(NC) Connecting as root to $(SERVER_IP)..."
-	ssh root@$(SERVER_IP)
+ssh-root: ## SSH into the server as root (disabled by default — use Tailscale SSH)
+	@echo -e "$(YELLOW)[WARN]$(NC) Root login is disabled on hardened instances."
+	@echo -e "       Use $(BOLD)make ssh$(NC) instead, then sudo if needed."
 
 tunnel: ## Open SSH tunnel to OpenClaw gateway (localhost:18789)
 	@echo -e "$(GREEN)[INFO]$(NC) Opening tunnel to $(SERVER_IP):18789..."
@@ -78,6 +83,15 @@ tunnel: ## Open SSH tunnel to OpenClaw gateway (localhost:18789)
 	@echo -e "  $(BOLD)Ctrl+C$(NC) to close"
 	@echo ""
 	@ssh -N -L 18789:127.0.0.1:18789 openclaw@$(SERVER_IP)
+
+dashboard: ## Open the customer dashboard URL
+	@HOSTNAME=$$(cd $(TERRAFORM_DIR) && terraform output -raw customer_hostname 2>/dev/null); \
+	if [[ -n "$$HOSTNAME" ]] && [[ "$$HOSTNAME" != "" ]]; then \
+		echo -e "$(GREEN)[INFO]$(NC) Opening https://$$HOSTNAME ..."; \
+		open "https://$$HOSTNAME" 2>/dev/null || xdg-open "https://$$HOSTNAME" 2>/dev/null || echo "https://$$HOSTNAME"; \
+	else \
+		echo -e "$(YELLOW)[WARN]$(NC) No customer_hostname set. Use $(BOLD)make tunnel$(NC) instead."; \
+	fi
 
 output: ## Show all Terraform outputs
 	@cd $(TERRAFORM_DIR) && terraform output
@@ -166,7 +180,7 @@ tailscale-serve: ## Expose gateway on tailnet via Tailscale Serve
 # =============================================================================
 
 help: ## Show this help message
-	@echo -e "$(BOLD)OpenClaw Infrastructure$(NC)"
+	@echo -e "$(BOLD)ClawStaffing Infrastructure$(NC)"
 	@echo ""
 	@echo -e "Usage: make <target> [ENV=prod]"
 	@echo ""
@@ -187,8 +201,8 @@ help: ## Show this help message
 	@echo ""
 	@echo -e "$(BOLD)Operations:$(NC)"
 	@echo -e "  $(GREEN)ssh$(NC)             SSH as openclaw user"
-	@echo -e "  $(GREEN)ssh-root$(NC)        SSH as root"
 	@echo -e "  $(GREEN)tunnel$(NC)          SSH tunnel to gateway (localhost:18789)"
+	@echo -e "  $(GREEN)dashboard$(NC)       Open the customer HTTPS dashboard"
 	@echo -e "  $(GREEN)status$(NC)          Check VPS status"
 	@echo -e "  $(GREEN)logs$(NC)            Stream Docker logs"
 	@echo -e "  $(GREEN)backup-now$(NC)      Run backup now"
@@ -197,7 +211,7 @@ help: ## Show this help message
 	@echo -e "  $(GREEN)output$(NC)          Show Terraform outputs"
 	@echo -e "  $(GREEN)ip$(NC)              Show server IP"
 	@echo ""
-	@echo -e "$(BOLD)Tailscale:$(NC)"
+	@echo -e "$(BOLD)Tailscale (admin):$(NC)"
 	@echo -e "  $(GREEN)tailscale-status$(NC)   Show Tailscale status and peers"
 	@echo -e "  $(GREEN)tailscale-ip$(NC)       Get Tailscale IP address"
 	@echo -e "  $(GREEN)tailscale-up$(NC)       Manually authenticate Tailscale"
@@ -207,4 +221,4 @@ help: ## Show this help message
 	@echo "  source config/inputs.sh"
 	@echo "  make init && make plan && make apply"
 	@echo "  make bootstrap && make deploy"
-	@echo "  make status"
+	@echo "  make dashboard"

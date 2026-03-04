@@ -145,13 +145,22 @@ echo "[OK] Set secure permissions (700) on ~/.openclaw"
 REMOTE_SCRIPT
 
 # -----------------------------------------------------------------------------
-# Copy docker-compose.yml to VPS
+# Copy docker-compose.yml and Caddyfile to VPS
 # -----------------------------------------------------------------------------
 
 echo ""
 echo "Copying docker-compose.yml to VPS..."
 scp $SSH_OPTS "$CONFIG_DIR/docker/docker-compose.yml" "$VPS_USER@$VPS_IP:~/openclaw/docker-compose.yml"
 echo "[OK] docker-compose.yml deployed to ~/openclaw/"
+
+echo ""
+echo "Copying Caddyfile to VPS..."
+if [[ -f "$CONFIG_DIR/docker/Caddyfile" ]]; then
+    scp $SSH_OPTS "$CONFIG_DIR/docker/Caddyfile" "$VPS_USER@$VPS_IP:~/openclaw/Caddyfile"
+    echo "[OK] Caddyfile deployed to ~/openclaw/"
+else
+    echo "[SKIP] No Caddyfile found at $CONFIG_DIR/docker/Caddyfile"
+fi
 
 # -----------------------------------------------------------------------------
 # Copy backup script to VPS
@@ -260,8 +269,12 @@ echo ""
 if [[ -f "secrets/openclaw.env" ]]; then
     echo "The VPS is configured and secrets are deployed."
     echo ""
-    echo "To pull and start the containers:"
-    echo "  make deploy"
+    echo "Next steps:"
+    echo "  1. Point your DNS to this VPS: $VPS_IP"
+    echo "  2. Deploy the containers: make deploy"
+    echo "  3. Access the dashboard at your customer hostname (HTTPS)"
+    echo ""
+    echo "Admin SSH: ssh $VPS_USER@$VPS_IP (or via Tailscale hostname)"
 else
     echo "The VPS is configured but secrets are NOT deployed yet."
     echo ""

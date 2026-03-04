@@ -3,11 +3,17 @@
 # ============================================
 
 # ============================================
-# Required: API Token
+# Required: API Tokens
 # ============================================
 
 variable "hcloud_token" {
   description = "Hetzner Cloud API token"
+  type        = string
+  sensitive   = true
+}
+
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token (needs DNS:Edit permission for the zone)"
   type        = string
   sensitive   = true
 }
@@ -74,14 +80,40 @@ variable "app_directory" {
 # ============================================
 
 variable "enable_tailscale" {
-  description = "Install and configure Tailscale VPN"
+  description = "Install and configure Tailscale VPN for admin access"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "tailscale_auth_key" {
-  description = "Tailscale auth key for automatic registration (optional)"
+  description = "Tailscale pre-auth key for automatic registration (required when enable_tailscale=true)"
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "tailscale_hostname" {
+  description = "Tailscale hostname for this instance (e.g., openclaw-vinny)"
+  type        = string
+  default     = "openclaw-prod"
+}
+
+# ============================================
+# Customer Configuration (DNS + HTTPS)
+# ============================================
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare zone ID for the customer domain (find in Cloudflare dashboard → Overview)"
+  type        = string
+}
+
+variable "domain" {
+  description = "Base domain for customer instances"
+  type        = string
+  default     = "clawstaffing.com"
+}
+
+variable "customer_slug" {
+  description = "Customer subdomain slug (e.g., 'vinny' → vinny.clawstaffing.com)"
+  type        = string
 }

@@ -1,7 +1,11 @@
 # ============================================
 # Production Environment - Terraform Configuration
 # ============================================
-# This configuration creates the production OpenClaw VPS on Hetzner Cloud
+# This configuration creates a ClawStaffing customer instance:
+#   - Hetzner VPS with security hardening
+#   - Cloudflare DNS record (customer_slug.domain → VPS IP)
+#   - Caddy auto-TLS via Let's Encrypt
+#   - Tailscale for admin SSH access
 
 terraform {
   required_version = ">= 1.5"
@@ -10,6 +14,10 @@ terraform {
     hcloud = {
       source  = "hetznercloud/hcloud"
       version = "~> 1.45"
+    }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
     }
   }
 
@@ -43,11 +51,23 @@ terraform {
 }
 
 # ============================================
-# Provider
+# Locals
+# ============================================
+
+locals {
+  customer_hostname = "${var.customer_slug}.${var.domain}"
+}
+
+# ============================================
+# Providers
 # ============================================
 
 provider "hcloud" {
   token = var.hcloud_token
+}
+
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
 }
 
 # ============================================
@@ -74,7 +94,24 @@ module "vps" {
     app_directory      = var.app_directory
     enable_tailscale   = var.enable_tailscale
     tailscale_auth_key = var.tailscale_auth_key
+    tailscale_hostname = var.tailscale_hostname
   })
+}
+
+# ============================================
+# Cloudflare DNS Record
+# ============================================
+# Creates: vinny.clawstaffing.com → VPS IPv4
+# Proxied is OFF so Caddy handles TLS directly (Let's Encrypt).
+
+resource "cloudflare_record" "customer_a" {
+  zone_id = var.cloudflare_zone_id
+  name    = var.customer_slug
+  type    = "A"
+  content = module.vps.server_ipv4
+  proxied = false
+  ttl     = 300
+  comment = "ClawStaffing instance for ${var.customer_slug}"
 }
 
 # ============================================
@@ -107,8 +144,8 @@ output "ssh_command" {
 }
 
 output "ssh_command_root" {
-  description = "SSH command to connect as root"
-  value       = module.vps.ssh_command_root
+  description = "SSH command to connect as root (disabled on hardened instances)"
+  value       = "Root login disabled. Use: ${module.vps.ssh_command} then sudo"
 }
 
 output "ssh_key_id" {
@@ -124,4 +161,19 @@ output "firewall_id" {
 output "tailscale_enabled" {
   description = "Whether Tailscale VPN is enabled"
   value       = module.vps.tailscale_enabled
+}
+
+output "customer_hostname" {
+  description = "Customer-facing FQDN for HTTPS access"
+  value       = local.customer_hostname
+}
+
+output "dashboard_url" {
+  description = "URL to access the OpenClaw dashboard"
+  value       = "https://${local.customer_hostname}"
+}
+
+output "dns_record" {
+  description = "Cloudflare DNS record created"
+  value       = "${local.customer_hostname} → ${module.vps.server_ipv4}"
 }

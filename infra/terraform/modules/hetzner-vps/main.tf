@@ -1,10 +1,11 @@
 # Hetzner VPS Module
 # ============================================
 # Creates an OpenClaw VPS with:
-# - SSH key authentication
-# - Firewall (SSH-only inbound)
-# - Cloud-init provisioning
-# - Docker and Node.js pre-installed
+# - SSH key authentication (key-only, no password)
+# - Firewall (SSH + HTTP/S + Tailscale inbound)
+# - Cloud-init provisioning with security hardening
+# - Docker pre-installed
+# - Caddy reverse proxy for auto-TLS
 
 terraform {
   required_providers {
@@ -30,7 +31,7 @@ data "hcloud_ssh_key" "main" {
 resource "hcloud_firewall" "main" {
   name = "${var.project_name}-${var.environment}-firewall"
 
-  # Allow SSH from specified CIDRs
+  # Allow SSH from specified CIDRs (for bootstrap/admin via public IP)
   dynamic "rule" {
     for_each = var.ssh_allowed_cidrs
     content {
@@ -41,7 +42,23 @@ resource "hcloud_firewall" "main" {
     }
   }
 
-  # Allow Tailscale UDP (if enabled)
+  # Allow HTTP (for ACME/Let's Encrypt challenges)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "80"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Allow HTTPS (Caddy reverse proxy → OpenClaw dashboard)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "443"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Allow Tailscale UDP (if enabled — default: on)
   dynamic "rule" {
     for_each = var.enable_tailscale ? [1] : []
     content {
