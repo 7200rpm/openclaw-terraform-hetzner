@@ -47,7 +47,7 @@ write_files:
       # ClawStaffing SSH Hardening
       PasswordAuthentication no
       PermitRootLogin no
-      MaxAuthTries 3
+      MaxAuthTries 5
       PubkeyAuthentication yes
       AuthenticationMethods publickey
       X11Forwarding no
