@@ -13,7 +13,7 @@ set -euo pipefail
 #   ./scripts/provision.sh --instance-id <uuid>
 #
 # Requires:
-#   - OPERATOR_API_KEY and PLATFORM_URL in environment
+#   - PLATFORM_SERVICE_TOKEN and PLATFORM_URL in environment
 #   - All standard inputs.sh variables (HCLOUD_TOKEN, etc.)
 #   - CONFIG_DIR pointing to openclaw-docker-config repo
 #   - jq installed
@@ -48,7 +48,7 @@ if [[ -z "$INSTANCE_ID" ]]; then
   echo "Usage: ./scripts/provision.sh --instance-id <uuid>"
   echo ""
   echo "Required environment variables:"
-  echo "  OPERATOR_API_KEY  - API key for the platform"
+  echo "  PLATFORM_SERVICE_TOKEN  - Provisioner service token for the platform"
   echo "  HCLOUD_TOKEN      - Hetzner Cloud API token"
   echo "  CONFIG_DIR        - Path to openclaw-docker-config repo"
   echo ""
@@ -57,7 +57,7 @@ if [[ -z "$INSTANCE_ID" ]]; then
 fi
 
 # ─── Validate environment ────────────────────────────────────────
-for var in OPERATOR_API_KEY HCLOUD_TOKEN CONFIG_DIR; do
+for var in PLATFORM_SERVICE_TOKEN HCLOUD_TOKEN CONFIG_DIR; do
   if [[ -z "${!var:-}" ]]; then
     echo "Error: $var is not set. Run 'source config/inputs.sh' first."
     exit 1
@@ -72,13 +72,15 @@ fi
 # ─── Helper: API calls ───────────────────────────────────────────
 api_get() {
   curl -sf "$PLATFORM_URL/api/instances/$INSTANCE_ID" \
-    -H "Authorization: Bearer $OPERATOR_API_KEY"
+    -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
+    -H "X-Claw-Service: provisioner"
 }
 
 api_patch() {
   curl -sf -X PATCH "$PLATFORM_URL/api/instances/$INSTANCE_ID" \
-    -H "Authorization: Bearer $OPERATOR_API_KEY" \
+    -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
     -H "Content-Type: application/json" \
+    -H "X-Claw-Service: provisioner" \
     -d "$1"
 }
 
@@ -86,9 +88,18 @@ report_event() {
   local event_type="$1"
   local details="${2:-}"
   curl -sf -X POST "$PLATFORM_URL/api/instances/$INSTANCE_ID/events" \
-    -H "Authorization: Bearer $OPERATOR_API_KEY" \
+    -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
     -H "Content-Type: application/json" \
+    -H "X-Claw-Service: provisioner" \
     -d "{\"eventType\": \"$event_type\", \"details\": $details}" > /dev/null 2>&1 || true
+}
+
+api_put_credentials() {
+  curl -sf -X PUT "$PLATFORM_URL/api/instances/$INSTANCE_ID/credentials" \
+    -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
+    -H "Content-Type: application/json" \
+    -H "X-Claw-Service: provisioner" \
+    -d "$1"
 }
 
 # ─── Step 1: Fetch instance details ──────────────────────────────
@@ -262,13 +273,16 @@ report_event "deploy_complete" '""'
 echo ""
 echo "──── Updating platform ────────────────────────"
 
+api_put_credentials "{
+  \"basicAuthUser\": \"$BASIC_AUTH_USER\",
+  \"basicAuthPassword\": \"$BASIC_AUTH_PASSWORD\",
+  \"gatewayToken\": \"$GATEWAY_TOKEN\"
+}"
+
 api_patch "{
   \"status\": \"active\",
   \"serverIp\": \"$SERVER_IP\",
   \"hetznerServerId\": \"$SERVER_ID\",
-  \"gatewayToken\": \"$GATEWAY_TOKEN\",
-  \"basicAuthUser\": \"$BASIC_AUTH_USER\",
-  \"basicAuthPassword\": \"$BASIC_AUTH_PASSWORD\",
   \"provisionedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
 }"
 

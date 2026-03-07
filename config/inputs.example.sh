@@ -49,6 +49,14 @@ export TF_VAR_ssh_allowed_cidrs='["0.0.0.0/0"]'
 export CONFIG_DIR="/path/to/your/openclaw-docker-config"
 
 # ============================================
+# OPTIONAL: Platform Provisioner Auth
+# ============================================
+# Needed when running scripts/provision.sh manually against the web platform.
+# Matches the PROVISIONER_PLATFORM_TOKEN configured on clawstaffing-web.
+# export PLATFORM_URL="https://www.clawstaffing.com"
+# export PLATFORM_SERVICE_TOKEN="CHANGE_ME_provisioner-platform-token"
+
+# ============================================
 # GitHub Container Registry
 # ============================================
 # For pulling private Docker images during bootstrap and deploy
