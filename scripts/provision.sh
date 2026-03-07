@@ -22,6 +22,7 @@ INSTANCE_ID=""
 PLATFORM_URL="${PLATFORM_URL:-https://www.clawstaffing.com}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PLATFORM_SERVICE_TOKEN="${PLATFORM_SERVICE_TOKEN:-${PROVISIONER_PLATFORM_TOKEN:-}}"
 
 # ─── Error handler ──────────────────────────────────────────────
 cleanup_on_error() {
@@ -49,6 +50,7 @@ if [[ -z "$INSTANCE_ID" ]]; then
   echo ""
   echo "Required environment variables:"
   echo "  PLATFORM_SERVICE_TOKEN  - Provisioner service token for the platform"
+  echo "                           (or PROVISIONER_PLATFORM_TOKEN)"
   echo "  HCLOUD_TOKEN      - Hetzner Cloud API token"
   echo "  CONFIG_DIR        - Path to openclaw-docker-config repo"
   echo ""
