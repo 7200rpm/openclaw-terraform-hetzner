@@ -124,6 +124,7 @@ CUSTOMER_ROLE=$(echo "$INSTANCE" | jq -r '.customerRole // empty')
 CUSTOMER_COMPANY=$(echo "$INSTANCE" | jq -r '.customerCompany // empty')
 CUSTOMER_TIMEZONE=$(echo "$INSTANCE" | jq -r '.customerTimezone // "America/Denver"')
 STATUS=$(echo "$INSTANCE" | jq -r '.status')
+SSH_KNOWN_HOSTS_FILE="${SSH_KNOWN_HOSTS_FILE:-/data/ssh/known_hosts}"
 
 echo "  Instance: $SLUG ($CUSTOMER_NAME)"
 echo "  Template: $TEMPLATE_SLUG"
@@ -188,7 +189,8 @@ echo "Waiting 90 seconds for server setup..."
 sleep 90
 
 # Clear old host key
-ssh-keygen -R "$SERVER_IP" 2>/dev/null || true
+ssh-keygen -R "$SERVER_IP" -f "$SSH_KNOWN_HOSTS_FILE" >/dev/null 2>&1 || true
+ssh-keygen -R "$SERVER_IP" >/dev/null 2>&1 || true
 
 # Verify SSH access
 echo "Testing SSH access..."
