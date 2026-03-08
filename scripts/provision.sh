@@ -24,6 +24,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLATFORM_SERVICE_TOKEN="${PLATFORM_SERVICE_TOKEN:-${PROVISIONER_PLATFORM_TOKEN:-}}"
 CURRENT_STEP=""
+CONFIG_REPO_DIR=""
+RELEASE_WORKTREE_ROOT=""
+RELEASE_CONFIG_DIR=""
 
 build_failure_details() {
   local exit_code="$1"
@@ -79,7 +82,15 @@ cleanup_on_error() {
     if [[ -n "$CURRENT_STEP" ]]; then
       report_event "${CURRENT_STEP}_failed" "$failure_details" 2>/dev/null || true
     fi
-    api_patch '{"status": "failed"}' 2>/dev/null || true
+    api_patch "$(jq -nc \
+      --arg status "failed" \
+      --arg releaseJobStatus "failed" \
+      --arg lastReleaseError "Provisioning failed during ${CURRENT_STEP:-unknown}" \
+      '{
+        status: $status,
+        releaseJobStatus: $releaseJobStatus,
+        lastReleaseError: $lastReleaseError
+      }')" 2>/dev/null || true
     report_event "provisioning_failed" "$failure_details" 2>/dev/null || true
   fi
 }
@@ -119,6 +130,14 @@ if ! command -v jq &>/dev/null; then
   echo "Error: jq is required. Install with: brew install jq"
   exit 1
 fi
+
+source "$SCRIPT_DIR/release-utils.sh"
+CONFIG_REPO_DIR="$CONFIG_DIR"
+
+cleanup_release_artifacts() {
+  cleanup_release_config_worktree "$CONFIG_REPO_DIR"
+}
+trap cleanup_release_artifacts EXIT
 
 # ─── Helper: API calls ───────────────────────────────────────────
 api_get() {
@@ -217,6 +236,12 @@ CUSTOMER_COMPANY=$(echo "$INSTANCE" | jq -r '.customerCompany // empty')
 CUSTOMER_TIMEZONE=$(echo "$INSTANCE" | jq -r '.customerTimezone // "America/Denver"')
 RUNTIME_SYNC_TOKEN=$(echo "$INSTANCE" | jq -r '.runtimeSyncToken // empty')
 STATUS=$(echo "$INSTANCE" | jq -r '.status')
+RELEASE_ID=$(echo "$INSTANCE" | jq -r '.effectiveRelease.id // empty')
+RELEASE_VERSION=$(echo "$INSTANCE" | jq -r '.effectiveRelease.releaseVersion // empty')
+RELEASE_OPENCLAW_VERSION=$(echo "$INSTANCE" | jq -r '.effectiveRelease.openclawVersion // empty')
+RELEASE_GATEWAY_IMAGE=$(echo "$INSTANCE" | jq -r '.effectiveRelease.gatewayImageRef // empty')
+RELEASE_WORKSPACE_SYNC_IMAGE=$(echo "$INSTANCE" | jq -r '.effectiveRelease.workspaceSyncImageRef // empty')
+RELEASE_DOCKER_CONFIG_COMMIT=$(echo "$INSTANCE" | jq -r '.effectiveRelease.dockerConfigCommit // empty')
 SSH_KNOWN_HOSTS_FILE="${SSH_KNOWN_HOSTS_FILE:-/data/ssh/known_hosts}"
 
 MODEL_SECRET_RESPONSE="$(api_get_integration_secret_response llm_provider)"
@@ -231,6 +256,7 @@ fi
 echo "  Instance: $SLUG ($CUSTOMER_NAME)"
 echo "  Template: $TEMPLATE_SLUG"
 echo "  Status:   $STATUS"
+echo "  Release:  ${RELEASE_VERSION:-none}"
 echo ""
 
 if [[ "$STATUS" != "approved" ]]; then
@@ -248,6 +274,22 @@ if [[ -z "$RUNTIME_SYNC_TOKEN" ]]; then
   echo "Error: Runtime sync token is missing."
   exit 1
 fi
+
+for var_name in RELEASE_ID RELEASE_VERSION RELEASE_GATEWAY_IMAGE RELEASE_WORKSPACE_SYNC_IMAGE RELEASE_DOCKER_CONFIG_COMMIT; do
+  if [[ -z "${!var_name:-}" ]]; then
+    echo "Error: Effective release is not configured for this instance."
+    exit 1
+  fi
+done
+
+echo "Preparing pinned config checkout..."
+create_release_config_worktree "$CONFIG_REPO_DIR" "$RELEASE_DOCKER_CONFIG_COMMIT"
+CONFIG_DIR="$RELEASE_CONFIG_DIR"
+echo "  Config commit:   $RELEASE_DOCKER_CONFIG_COMMIT"
+echo "  OpenClaw:        $RELEASE_OPENCLAW_VERSION"
+echo "  Gateway image:   $RELEASE_GATEWAY_IMAGE"
+echo "  Workspace image: $RELEASE_WORKSPACE_SYNC_IMAGE"
+echo ""
 
 # ─── Step 2: Generate credentials ────────────────────────────────
 echo "Resolving access credentials..."
@@ -356,6 +398,8 @@ CUSTOMER_HOSTNAME=${SLUG}.clawstaffing.com
 BASIC_AUTH_USER=$BASIC_AUTH_USER
 BASIC_AUTH_HASH='$BASIC_AUTH_HASH'
 GHCR_USERNAME=${GHCR_USERNAME:-}
+OPENCLAW_GATEWAY_IMAGE=${RELEASE_GATEWAY_IMAGE}
+WORKSPACE_SYNC_IMAGE=${RELEASE_WORKSPACE_SYNC_IMAGE}
 GH_TOKEN=${GH_TOKEN:-}
 BRAVE_API_KEY=${BRAVE_API_KEY:-${BRAVE_SEARCH_API_KEY:-}}
 INSTANCE_ID=${INSTANCE_ID}
@@ -421,7 +465,11 @@ api_patch "{
   \"status\": \"active\",
   \"serverIp\": \"$SERVER_IP\",
   \"hetznerServerId\": \"$SERVER_ID\",
-  \"provisionedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+  \"provisionedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+  \"appliedReleaseId\": \"$RELEASE_ID\",
+  \"releaseJobStatus\": \"idle\",
+  \"lastReleaseError\": null,
+  \"lastReleaseAppliedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
 }"
 
 CURRENT_STEP=""

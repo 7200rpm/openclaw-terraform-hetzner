@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLATFORM_SERVICE_TOKEN="${PLATFORM_SERVICE_TOKEN:-${PROVISIONER_PLATFORM_TOKEN:-}}"
 CURRENT_STEP=""
+SKIP_EVENTS=0
 
 build_failure_details() {
   local exit_code="$1"
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --instance-id) INSTANCE_ID="$2"; shift 2;;
     --host) HOST="$2"; shift 2;;
     --platform-url) PLATFORM_URL="$2"; shift 2;;
+    --skip-events) SKIP_EVENTS=1; shift 1;;
     *) echo "Unknown option: $1"; exit 1;;
   esac
 done
@@ -63,6 +65,9 @@ api_get_secret_response() {
 }
 
 report_event() {
+  if [[ "$SKIP_EVENTS" == "1" ]]; then
+    return 0
+  fi
   local event_type="$1"
   local details="${2:-}"
   curl -sf -X POST "$PLATFORM_URL/api/instances/$INSTANCE_ID/events" \

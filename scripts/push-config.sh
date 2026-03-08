@@ -20,6 +20,7 @@ set -euo pipefail
 VPS_USER="openclaw"
 SSH_OPTS="-o StrictHostKeyChecking=accept-new"
 TERRAFORM_DIR="infra/terraform/envs/prod"
+SKIP_RESTART="${SKIP_RESTART:-0}"
 
 # Local path to the openclaw-config repository
 CONFIG_DIR="${CONFIG_DIR:-}"
@@ -79,6 +80,18 @@ echo "[...] Pushing config files to VPS..."
 
 ssh $SSH_OPTS "$VPS_USER@$VPS_IP" "mkdir -p $REMOTE_CONFIG_DIR && chmod 700 $REMOTE_CONFIG_DIR"
 
+echo ""
+echo "[...] Syncing docker-compose.yml and Caddyfile..."
+scp $SSH_OPTS "$CONFIG_DIR/docker/docker-compose.yml" "$VPS_USER@$VPS_IP:~/openclaw/docker-compose.yml"
+echo "[OK] Updated docker-compose.yml"
+
+if [[ -f "$CONFIG_DIR/docker/Caddyfile" ]]; then
+    scp $SSH_OPTS "$CONFIG_DIR/docker/Caddyfile" "$VPS_USER@$VPS_IP:~/openclaw/Caddyfile"
+    echo "[OK] Updated Caddyfile"
+else
+    echo "[SKIP] No Caddyfile found at $CONFIG_DIR/docker/Caddyfile"
+fi
+
 FILE_COUNT=0
 for file in "$CONFIG_DIR"/config/*; do
     if [[ -f "$file" ]]; then
@@ -104,11 +117,16 @@ echo "[OK] Pushed $FILE_COUNT config file(s)"
 # Restart container to pick up changes
 # -----------------------------------------------------------------------------
 
-echo ""
-echo "[...] Recreating gateway + proxy..."
+if [[ "$SKIP_RESTART" == "1" ]]; then
+    echo ""
+    echo "[SKIP] Restart skipped (SKIP_RESTART=1)"
+else
+    echo ""
+    echo "[...] Recreating gateway + proxy..."
 
-ssh $SSH_OPTS "$VPS_USER@$VPS_IP" \
-    "cd ~/openclaw && docker compose up -d --force-recreate openclaw-gateway caddy 2>/dev/null || echo '[SKIP] Could not recreate gateway + proxy'"
+    ssh $SSH_OPTS "$VPS_USER@$VPS_IP" \
+        "cd ~/openclaw && docker compose up -d --force-recreate openclaw-gateway caddy 2>/dev/null || echo '[SKIP] Could not recreate gateway + proxy'"
+fi
 
 echo ""
 echo "=== Done ==="

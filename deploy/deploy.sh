@@ -2,12 +2,12 @@
 # =============================================================================
 # OpenClaw Deploy Script
 # =============================================================================
-# Purpose: Pull the latest Docker image and restart the container.
+# Purpose: Pull the configured Docker image refs and restart the services.
 # Usage: ./deploy/deploy.sh [VPS_IP]
 #
 # This script:
-#   1. Pulls the latest image from GHCR
-#   2. Restarts the container with the new image
+#   1. Pulls the configured image refs from GHCR
+#   2. Restarts the container with the configured images
 #   3. Cleans up old images
 # =============================================================================
 
@@ -79,7 +79,7 @@ fi
 # Pull
 echo -e "${BOLD}Pull${NC}"
 echo ""
-echo -ne "  Pulling latest image...  "
+echo -ne "  Pulling configured images...  "
 if docker compose pull --quiet 2>/dev/null; then
     echo -e "${G}done${NC}"
 else

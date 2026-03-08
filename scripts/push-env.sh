@@ -20,8 +20,9 @@ set -euo pipefail
 VPS_USER="openclaw"
 SSH_OPTS="-o StrictHostKeyChecking=accept-new"
 TERRAFORM_DIR="infra/terraform/envs/prod"
-ENV_FILE="secrets/openclaw.env"
+ENV_FILE="${ENV_FILE:-secrets/openclaw.env}"
 REMOTE_PATH="/home/openclaw/openclaw/.env"
+SKIP_RESTART="${SKIP_RESTART:-0}"
 
 # Required variables that must be non-empty
 REQUIRED_VARS=(
@@ -117,11 +118,16 @@ echo "[OK] Environment file deployed to $REMOTE_PATH"
 # Restart container to pick up changes
 # -----------------------------------------------------------------------------
 
-echo ""
-echo "[...] Recreating gateway + proxy..."
+if [[ "$SKIP_RESTART" == "1" ]]; then
+    echo ""
+    echo "[SKIP] Restart skipped (SKIP_RESTART=1)"
+else
+    echo ""
+    echo "[...] Recreating gateway + proxy..."
 
-ssh $SSH_OPTS "$VPS_USER@$VPS_IP" \
-    "cd ~/openclaw && docker compose up -d --force-recreate openclaw-gateway caddy 2>/dev/null || echo '[SKIP] Could not recreate gateway + proxy'"
+    ssh $SSH_OPTS "$VPS_USER@$VPS_IP" \
+        "cd ~/openclaw && docker compose up -d --force-recreate openclaw-gateway caddy 2>/dev/null || echo '[SKIP] Could not recreate gateway + proxy'"
+fi
 
 echo ""
 echo "=== Done ==="
