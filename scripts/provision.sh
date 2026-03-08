@@ -290,7 +290,7 @@ CURRENT_STEP="bootstrap"
 report_event "bootstrap_started" '""'
 
 export SERVER_IP
-echo "n" | ./deploy/bootstrap.sh 2>&1
+BOOTSTRAP_SSH_PROMPT=0 ./deploy/bootstrap.sh 2>&1
 
 report_event "bootstrap_complete" '""'
 

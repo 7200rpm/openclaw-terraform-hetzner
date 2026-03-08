@@ -10,6 +10,7 @@
 #   2. Creates directories and copies docker-compose.yml to the VPS
 #   3. Pushes secrets and config files
 #   4. Copies the backup script and sets up systemd timers
+#   5. Optionally offers an interactive SSH handoff when run in a TTY
 # =============================================================================
 
 set -euo pipefail
@@ -20,6 +21,7 @@ set -euo pipefail
 
 # Local path to the openclaw-config repository
 CONFIG_DIR="${CONFIG_DIR:-}"
+BOOTSTRAP_SSH_PROMPT="${BOOTSTRAP_SSH_PROMPT:-1}"
 
 # GitHub Container Registry credentials (for pulling private images)
 GHCR_USERNAME="${GHCR_USERNAME:-}"
@@ -283,6 +285,11 @@ else
     echo "  3. Deploy: make deploy"
 fi
 echo ""
+
+if [[ "$BOOTSTRAP_SSH_PROMPT" == "0" || ! -t 0 ]]; then
+    echo "[SKIP] Non-interactive run; skipping SSH handoff prompt."
+    exit 0
+fi
 
 read -p "Would you like to SSH in now? [y/N] " -n 1 -r
 echo ""
