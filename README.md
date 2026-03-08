@@ -154,6 +154,8 @@ make status     # Check deployment status
 make logs       # Stream container logs
 ```
 
+`deploy/bootstrap.sh` is interactive when run manually. Automated callers should set `BOOTSTRAP_SSH_PROMPT=0` instead of piping `y`/`n` into the script, because the bootstrap flow uses `ssh`/`scp` and those commands can consume stdin before the final prompt.
+
 **Operations:**
 ```bash
 make ssh        # SSH to VPS as openclaw user
