@@ -23,15 +23,64 @@ PLATFORM_URL="${PLATFORM_URL:-https://www.clawstaffing.com}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLATFORM_SERVICE_TOKEN="${PLATFORM_SERVICE_TOKEN:-${PROVISIONER_PLATFORM_TOKEN:-}}"
+CURRENT_STEP=""
+
+build_failure_details() {
+  local exit_code="$1"
+
+  if command -v jq &>/dev/null; then
+    jq -nc \
+      --arg step "${CURRENT_STEP:-unknown}" \
+      --arg serverIp "${SERVER_IP:-}" \
+      --argjson exitCode "$exit_code" \
+      '{
+        step: $step,
+        exitCode: $exitCode
+      } + (if $serverIp != "" then {serverIp: $serverIp} else {} end)'
+  elif [[ -n "${SERVER_IP:-}" ]]; then
+    printf '{"step":"%s","exitCode":%s,"serverIp":"%s"}' \
+      "${CURRENT_STEP:-unknown}" "$exit_code" "$SERVER_IP"
+  else
+    printf '{"step":"%s","exitCode":%s}' \
+      "${CURRENT_STEP:-unknown}" "$exit_code"
+  fi
+}
+
+wait_for_ssh() {
+  local attempts="${SSH_READY_ATTEMPTS:-12}"
+  local delay_seconds="${SSH_READY_DELAY_SECONDS:-10}"
+  local attempt
+
+  for attempt in $(seq 1 "$attempts"); do
+    if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+      "openclaw@$SERVER_IP" "echo 'SSH OK'" >/dev/null 2>&1; then
+      echo "[OK] SSH access confirmed"
+      return 0
+    fi
+
+    if [[ "$attempt" -lt "$attempts" ]]; then
+      echo "SSH not ready yet (attempt ${attempt}/${attempts}); retrying in ${delay_seconds}s..."
+      sleep "$delay_seconds"
+    fi
+  done
+
+  echo "Error: SSH did not become ready on $SERVER_IP after ${attempts} attempts."
+  return 1
+}
 
 # ─── Error handler ──────────────────────────────────────────────
 cleanup_on_error() {
   local exit_code=$?
+  local failure_details=""
   echo ""
   echo "ERROR: Provisioning failed (exit code: $exit_code)"
   if [[ -n "$INSTANCE_ID" ]]; then
+    failure_details="$(build_failure_details "$exit_code")"
+    if [[ -n "$CURRENT_STEP" ]]; then
+      report_event "${CURRENT_STEP}_failed" "$failure_details" 2>/dev/null || true
+    fi
     api_patch '{"status": "failed"}' 2>/dev/null || true
-    report_event "provisioning_failed" "{\"exitCode\": $exit_code}" 2>/dev/null || true
+    report_event "provisioning_failed" "$failure_details" 2>/dev/null || true
   fi
 }
 trap cleanup_on_error ERR
@@ -155,6 +204,7 @@ api_patch '{"status": "provisioning"}'
 # ─── Step 4: Terraform ───────────────────────────────────────────
 echo ""
 echo "──── Terraform ────────────────────────────────"
+CURRENT_STEP="terraform"
 report_event "terraform_started" '""'
 
 cd "$REPO_DIR/infra/terraform/envs/prod"
@@ -194,13 +244,13 @@ ssh-keygen -R "$SERVER_IP" >/dev/null 2>&1 || true
 
 # Verify SSH access
 echo "Testing SSH access..."
-ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "openclaw@$SERVER_IP" "echo 'SSH OK'" || {
-  echo "Warning: SSH test failed, continuing anyway..."
-}
+CURRENT_STEP="ssh_check"
+wait_for_ssh
 
 # ─── Step 6: Generate customer .env ──────────────────────────────
 echo ""
 echo "──── Generating secrets ───────────────────────"
+CURRENT_STEP="generate_secrets"
 
 # Generate basic auth hash using htpasswd (works without Docker-in-Docker)
 # Falls back to caddy if htpasswd is not available
@@ -236,19 +286,22 @@ echo "Secrets written to secrets/openclaw.env"
 # ─── Step 7: Bootstrap ───────────────────────────────────────────
 echo ""
 echo "──── Bootstrap ────────────────────────────────"
+CURRENT_STEP="bootstrap"
 report_event "bootstrap_started" '""'
 
 export SERVER_IP
-echo "n" | ./deploy/bootstrap.sh 2>&1 || true
+echo "n" | ./deploy/bootstrap.sh 2>&1
 
 report_event "bootstrap_complete" '""'
 
 # ─── Step 8: Deploy customer template ────────────────────────────
 echo ""
 echo "──── Template deployment ──────────────────────"
+CURRENT_STEP="template_deploy"
 
 TEMPLATE_DIR="$CONFIG_DIR/templates/$TEMPLATE_SLUG"
 if [[ -d "$TEMPLATE_DIR/scripts" ]]; then
+  report_event "template_deploy_started" '""'
   echo "Deploying $TEMPLATE_SLUG template..."
   cd "$TEMPLATE_DIR/scripts"
   bash deploy-customer.sh \
@@ -256,10 +309,9 @@ if [[ -d "$TEMPLATE_DIR/scripts" ]]; then
     --name "$CUSTOMER_NAME" \
     --role "$CUSTOMER_ROLE" \
     --company "$CUSTOMER_COMPANY" \
-    --timezone "$CUSTOMER_TIMEZONE" || {
-    echo "Warning: Template deployment had issues, continuing..."
-  }
+    --timezone "$CUSTOMER_TIMEZONE"
   cd "$REPO_DIR"
+  report_event "template_deploy_complete" '""'
 else
   echo "No template scripts found at $TEMPLATE_DIR/scripts, skipping..."
 fi
@@ -267,15 +319,17 @@ fi
 # ─── Step 9: Deploy containers ───────────────────────────────────
 echo ""
 echo "──── Deploy containers ────────────────────────"
+CURRENT_STEP="deploy"
 report_event "deploy_started" '""'
 
-./deploy/deploy.sh 2>&1 || true
+./deploy/deploy.sh 2>&1
 
 report_event "deploy_complete" '""'
 
 # ─── Step 10: Update platform ────────────────────────────────────
 echo ""
 echo "──── Updating platform ────────────────────────"
+CURRENT_STEP="finalize"
 
 api_put_credentials "{
   \"basicAuthUser\": \"$BASIC_AUTH_USER\",
@@ -289,6 +343,8 @@ api_patch "{
   \"hetznerServerId\": \"$SERVER_ID\",
   \"provisionedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
 }"
+
+CURRENT_STEP=""
 
 # ─── Done ─────────────────────────────────────────────────────────
 echo ""
