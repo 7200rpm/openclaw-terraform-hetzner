@@ -98,12 +98,22 @@ fi
 echo ""
 echo -e "${BOLD}Restart${NC}"
 echo ""
-echo -ne "  Starting container...    "
-if docker compose $PROFILES up -d 2>/dev/null; then
+echo -ne "  Recreating gateway + proxy...  "
+if docker compose up -d --force-recreate openclaw-gateway caddy 2>/dev/null; then
     echo -e "${G}done${NC}"
 else
     echo -e "${R}failed${NC}"
     exit 1
+fi
+
+if [[ "$SYNC_ENABLED" == "true" ]]; then
+    echo -ne "  Starting workspace-sync...     "
+    if docker compose $PROFILES up -d workspace-sync 2>/dev/null; then
+        echo -e "${G}done${NC}"
+    else
+        echo -e "${R}failed${NC}"
+        exit 1
+    fi
 fi
 
 # Stop workspace-sync if it was running but sync is now disabled

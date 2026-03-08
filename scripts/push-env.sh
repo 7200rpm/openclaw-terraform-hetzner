@@ -118,10 +118,10 @@ echo "[OK] Environment file deployed to $REMOTE_PATH"
 # -----------------------------------------------------------------------------
 
 echo ""
-echo "[...] Restarting container..."
+echo "[...] Recreating gateway + proxy..."
 
 ssh $SSH_OPTS "$VPS_USER@$VPS_IP" \
-    "cd ~/openclaw && docker compose restart 2>/dev/null || echo '[SKIP] No running container to restart'"
+    "cd ~/openclaw && docker compose up -d --force-recreate openclaw-gateway caddy 2>/dev/null || echo '[SKIP] Could not recreate gateway + proxy'"
 
 echo ""
 echo "=== Done ==="
