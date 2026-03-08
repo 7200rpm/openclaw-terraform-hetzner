@@ -98,8 +98,8 @@ fi
 echo ""
 echo -e "${BOLD}Restart${NC}"
 echo ""
-echo -ne "  Recreating gateway + proxy...  "
-if docker compose up -d --force-recreate openclaw-gateway caddy 2>/dev/null; then
+echo -ne "  Recreating gateway + runtime + proxy...  "
+if docker compose up -d --force-recreate openclaw-gateway template-runtime caddy 2>/dev/null; then
     echo -e "${G}done${NC}"
 else
     echo -e "${R}failed${NC}"

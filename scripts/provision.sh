@@ -127,6 +127,14 @@ api_get() {
     -H "X-Claw-Service: provisioner"
 }
 
+api_get_integration_secret_response() {
+  local kind="$1"
+  curl -s -w "\n%{http_code}" \
+    "$PLATFORM_URL/api/instances/$INSTANCE_ID/integrations/$kind/secret" \
+    -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
+    -H "X-Claw-Service: provisioner"
+}
+
 api_patch() {
   curl -sf -X PATCH "$PLATFORM_URL/api/instances/$INSTANCE_ID" \
     -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
@@ -207,8 +215,18 @@ CUSTOMER_NAME=$(echo "$INSTANCE" | jq -r '.customerName // empty')
 CUSTOMER_ROLE=$(echo "$INSTANCE" | jq -r '.customerRole // empty')
 CUSTOMER_COMPANY=$(echo "$INSTANCE" | jq -r '.customerCompany // empty')
 CUSTOMER_TIMEZONE=$(echo "$INSTANCE" | jq -r '.customerTimezone // "America/Denver"')
+RUNTIME_SYNC_TOKEN=$(echo "$INSTANCE" | jq -r '.runtimeSyncToken // empty')
 STATUS=$(echo "$INSTANCE" | jq -r '.status')
 SSH_KNOWN_HOSTS_FILE="${SSH_KNOWN_HOSTS_FILE:-/data/ssh/known_hosts}"
+
+MODEL_SECRET_RESPONSE="$(api_get_integration_secret_response llm_provider)"
+MODEL_SECRET_STATUS="$(printf '%s\n' "$MODEL_SECRET_RESPONSE" | tail -n1)"
+MODEL_SECRET_BODY="$(printf '%s\n' "$MODEL_SECRET_RESPONSE" | sed '$d')"
+INSTANCE_MINIMAX_API_KEY=""
+
+if [[ "$MODEL_SECRET_STATUS" == "200" ]]; then
+  INSTANCE_MINIMAX_API_KEY="$(echo "$MODEL_SECRET_BODY" | jq -r '.minimaxApiKey // empty')"
+fi
 
 echo "  Instance: $SLUG ($CUSTOMER_NAME)"
 echo "  Template: $TEMPLATE_SLUG"
@@ -218,6 +236,16 @@ echo ""
 if [[ "$STATUS" != "approved" ]]; then
   echo "Error: Instance status is '$STATUS', expected 'approved'"
   echo "Approve the instance in the admin panel first."
+  exit 1
+fi
+
+if [[ -z "$INSTANCE_MINIMAX_API_KEY" ]]; then
+  echo "Error: Instance MiniMax API key is missing."
+  exit 1
+fi
+
+if [[ -z "$RUNTIME_SYNC_TOKEN" ]]; then
+  echo "Error: Runtime sync token is missing."
   exit 1
 fi
 
@@ -316,19 +344,27 @@ cat > secrets/openclaw.env << EOF
 # Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+MINIMAX_API_KEY=${INSTANCE_MINIMAX_API_KEY}
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
 OPENCLAW_GATEWAY_TOKEN=$GATEWAY_TOKEN
 OPENCLAW_GATEWAY_PORT=18789
 OPENCLAW_GATEWAY_BIND=0.0.0.0
 OPENCLAW_CONFIG_DIR=/home/openclaw/.openclaw
 OPENCLAW_WORKSPACE_DIR=/home/openclaw/.openclaw/workspace
+OPENCLAW_GWS_CONFIG_DIR=/home/openclaw/.config/gws
 CUSTOMER_HOSTNAME=${SLUG}.clawstaffing.com
 BASIC_AUTH_USER=$BASIC_AUTH_USER
 BASIC_AUTH_HASH='$BASIC_AUTH_HASH'
 GHCR_USERNAME=${GHCR_USERNAME:-}
 GH_TOKEN=${GH_TOKEN:-}
-BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+BRAVE_API_KEY=${BRAVE_API_KEY:-${BRAVE_SEARCH_API_KEY:-}}
+INSTANCE_ID=${INSTANCE_ID}
+INSTANCE_SLUG=${SLUG}
+TEMPLATE_SLUG=${TEMPLATE_SLUG}
+CONTROL_PLANE_URL=${PLATFORM_URL}
+RUNTIME_SYNC_TOKEN=${RUNTIME_SYNC_TOKEN}
+CUSTOMER_TIMEZONE=${CUSTOMER_TIMEZONE}
+TEMPLATE_RUNTIME_PORT=3001
 EOF
 
 echo "Secrets written to secrets/openclaw.env"
@@ -349,21 +385,15 @@ echo ""
 echo "──── Template deployment ──────────────────────"
 CURRENT_STEP="template_deploy"
 
-TEMPLATE_DIR="$CONFIG_DIR/templates/$TEMPLATE_SLUG"
-if [[ -d "$TEMPLATE_DIR/scripts" ]]; then
+if [[ -d "$CONFIG_DIR/templates/$TEMPLATE_SLUG/scripts" ]]; then
   report_event "template_deploy_started" '""'
   echo "Deploying $TEMPLATE_SLUG template..."
-  cd "$TEMPLATE_DIR/scripts"
-  bash deploy-customer.sh \
-    --host "$SERVER_IP" \
-    --name "$CUSTOMER_NAME" \
-    --role "$CUSTOMER_ROLE" \
-    --company "$CUSTOMER_COMPANY" \
-    --timezone "$CUSTOMER_TIMEZONE"
-  cd "$REPO_DIR"
+  bash "$SCRIPT_DIR/sync-instance.sh" \
+    --instance-id "$INSTANCE_ID" \
+    --host "$SERVER_IP"
   report_event "template_deploy_complete" '""'
 else
-  echo "No template scripts found at $TEMPLATE_DIR/scripts, skipping..."
+  echo "No template scripts found at $CONFIG_DIR/templates/$TEMPLATE_SLUG/scripts, skipping..."
 fi
 
 # ─── Step 9: Deploy containers ───────────────────────────────────
