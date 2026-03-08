@@ -153,6 +153,41 @@ api_put_credentials() {
     -d "$1"
 }
 
+api_get_credentials() {
+  curl -s -w "\n%{http_code}" "$PLATFORM_URL/api/instances/$INSTANCE_ID/credentials" \
+    -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
+    -H "X-Claw-Service: provisioner"
+}
+
+load_existing_credentials() {
+  local response=""
+  local status=""
+  local body=""
+
+  response="$(api_get_credentials)"
+  status="$(printf '%s\n' "$response" | tail -n1)"
+  body="$(printf '%s\n' "$response" | sed '$d')"
+
+  if [[ "$status" == "200" ]]; then
+    EXISTING_BASIC_AUTH_USER="$(echo "$body" | jq -r '.basicAuthUser // empty')"
+    EXISTING_BASIC_AUTH_PASSWORD="$(echo "$body" | jq -r '.basicAuthPassword // empty')"
+    EXISTING_GATEWAY_TOKEN="$(echo "$body" | jq -r '.gatewayToken // empty')"
+
+    if [[ -n "$EXISTING_BASIC_AUTH_USER" && -n "$EXISTING_BASIC_AUTH_PASSWORD" && -n "$EXISTING_GATEWAY_TOKEN" ]]; then
+      return 0
+    fi
+
+    echo "Warning: Platform returned incomplete credentials; generating new access credentials."
+    return 1
+  fi
+
+  if [[ "$status" != "404" ]]; then
+    echo "Warning: Could not load existing credentials from platform (HTTP $status); generating new access credentials."
+  fi
+
+  return 1
+}
+
 # ─── Step 1: Fetch instance details ──────────────────────────────
 echo "═══════════════════════════════════════════════"
 echo "  ClawStaffing Instance Provisioner"
@@ -187,10 +222,18 @@ if [[ "$STATUS" != "approved" ]]; then
 fi
 
 # ─── Step 2: Generate credentials ────────────────────────────────
-echo "Generating credentials..."
-GATEWAY_TOKEN=$(openssl rand -hex 32)
-BASIC_AUTH_USER="$SLUG"
-BASIC_AUTH_PASSWORD=$(openssl rand -base64 16 | tr -d '=+/' | head -c 20)
+echo "Resolving access credentials..."
+if load_existing_credentials; then
+  GATEWAY_TOKEN="$EXISTING_GATEWAY_TOKEN"
+  BASIC_AUTH_USER="$EXISTING_BASIC_AUTH_USER"
+  BASIC_AUTH_PASSWORD="$EXISTING_BASIC_AUTH_PASSWORD"
+  echo "Reusing existing credentials from the platform secret store..."
+else
+  echo "Generating new credentials..."
+  GATEWAY_TOKEN=$(openssl rand -hex 32)
+  BASIC_AUTH_USER="$SLUG"
+  BASIC_AUTH_PASSWORD=$(openssl rand -base64 16 | tr -d '=+/' | head -c 20)
+fi
 
 echo "  Gateway token:    ${GATEWAY_TOKEN:0:8}..."
 echo "  Basic auth user:  $BASIC_AUTH_USER"
@@ -251,6 +294,13 @@ wait_for_ssh
 echo ""
 echo "──── Generating secrets ───────────────────────"
 CURRENT_STEP="generate_secrets"
+
+echo "Staging access credentials in platform..."
+api_put_credentials "{
+  \"basicAuthUser\": \"$BASIC_AUTH_USER\",
+  \"basicAuthPassword\": \"$BASIC_AUTH_PASSWORD\",
+  \"gatewayToken\": \"$GATEWAY_TOKEN\"
+}"
 
 # Generate basic auth hash using htpasswd (works without Docker-in-Docker)
 # Falls back to caddy if htpasswd is not available
