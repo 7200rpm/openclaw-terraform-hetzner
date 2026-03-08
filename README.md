@@ -156,6 +156,8 @@ make logs       # Stream container logs
 
 `deploy/bootstrap.sh` is interactive when run manually. Automated callers should set `BOOTSTRAP_SSH_PROMPT=0` instead of piping `y`/`n` into the script, because the bootstrap flow uses `ssh`/`scp` and those commands can consume stdin before the final prompt.
 
+`scripts/provision.sh` also reuses any existing customer access credentials from the platform secret store and stages them before it pushes `secrets/openclaw.env` to the VPS. Reprovisioning a live slug should preserve the same Basic Auth password and gateway token unless credentials were explicitly deleted first.
+
 **Operations:**
 ```bash
 make ssh        # SSH to VPS as openclaw user
