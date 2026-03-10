@@ -71,3 +71,25 @@ wait_for_remote_health() {
 
   return 1
 }
+
+wait_for_remote_command() {
+  local host="$1"
+  local command="$2"
+  local attempts="$3"
+  local delay_seconds="$4"
+  local ssh_user="${5:-openclaw}"
+
+  local attempt
+  for attempt in $(seq 1 "$attempts"); do
+    if ssh -o StrictHostKeyChecking=accept-new "${ssh_user}@${host}" \
+      "$command"; then
+      return 0
+    fi
+
+    if [[ "$attempt" -lt "$attempts" ]]; then
+      sleep "$delay_seconds"
+    fi
+  done
+
+  return 1
+}

@@ -126,7 +126,8 @@ REMOTE_SCRIPT
 
   wait_for_remote_health "$HOST" "http://127.0.0.1:18789/health" \
     "${GATEWAY_READY_ATTEMPTS:-24}" "${GATEWAY_READY_DELAY_SECONDS:-5}" "$SSH_USER"
-  wait_for_remote_health "$HOST" "http://127.0.0.1:3001/health" \
+  wait_for_remote_command "$HOST" \
+    "cd \$HOME/openclaw && docker compose exec -T template-runtime curl -sf http://127.0.0.1:3001/health >/dev/null 2>&1" \
     "${RUNTIME_READY_ATTEMPTS:-24}" "${RUNTIME_READY_DELAY_SECONDS:-5}" "$SSH_USER"
 }
 
@@ -348,7 +349,8 @@ CURRENT_STEP="deploy"
 CURRENT_STEP="health_check"
 wait_for_remote_health "$HOST" "http://127.0.0.1:18789/health" \
   "${GATEWAY_READY_ATTEMPTS:-24}" "${GATEWAY_READY_DELAY_SECONDS:-5}" "$SSH_USER"
-wait_for_remote_health "$HOST" "http://127.0.0.1:3001/health" \
+wait_for_remote_command "$HOST" \
+  "cd \$HOME/openclaw && docker compose exec -T template-runtime curl -sf http://127.0.0.1:3001/health >/dev/null 2>&1" \
   "${RUNTIME_READY_ATTEMPTS:-24}" "${RUNTIME_READY_DELAY_SECONDS:-5}" "$SSH_USER"
 
 CURRENT_STEP="finalize"
