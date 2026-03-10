@@ -125,9 +125,9 @@ fi
 REMOTE_SCRIPT
 
   wait_for_remote_health "$HOST" "http://127.0.0.1:18789/health" \
-    "${GATEWAY_READY_ATTEMPTS:-12}" "${GATEWAY_READY_DELAY_SECONDS:-5}" "$SSH_USER"
+    "${GATEWAY_READY_ATTEMPTS:-24}" "${GATEWAY_READY_DELAY_SECONDS:-5}" "$SSH_USER"
   wait_for_remote_health "$HOST" "http://127.0.0.1:3001/health" \
-    "${RUNTIME_READY_ATTEMPTS:-12}" "${RUNTIME_READY_DELAY_SECONDS:-5}" "$SSH_USER"
+    "${RUNTIME_READY_ATTEMPTS:-24}" "${RUNTIME_READY_DELAY_SECONDS:-5}" "$SSH_USER"
 }
 
 cleanup_on_error() {
@@ -347,9 +347,9 @@ CURRENT_STEP="deploy"
 
 CURRENT_STEP="health_check"
 wait_for_remote_health "$HOST" "http://127.0.0.1:18789/health" \
-  "${GATEWAY_READY_ATTEMPTS:-12}" "${GATEWAY_READY_DELAY_SECONDS:-5}" "$SSH_USER"
+  "${GATEWAY_READY_ATTEMPTS:-24}" "${GATEWAY_READY_DELAY_SECONDS:-5}" "$SSH_USER"
 wait_for_remote_health "$HOST" "http://127.0.0.1:3001/health" \
-  "${RUNTIME_READY_ATTEMPTS:-12}" "${RUNTIME_READY_DELAY_SECONDS:-5}" "$SSH_USER"
+  "${RUNTIME_READY_ATTEMPTS:-24}" "${RUNTIME_READY_DELAY_SECONDS:-5}" "$SSH_USER"
 
 CURRENT_STEP="finalize"
 api_patch "$(jq -nc \
