@@ -154,6 +154,13 @@ api_get_integration_secret_response() {
     -H "X-Claw-Service: provisioner"
 }
 
+api_get_mailbox_runtime_secret_response() {
+  curl -s -w "\n%{http_code}" \
+    "$PLATFORM_URL/api/instances/$INSTANCE_ID/mailbox/runtime-secret" \
+    -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
+    -H "X-Claw-Service: provisioner"
+}
+
 api_patch() {
   curl -sf -X PATCH "$PLATFORM_URL/api/instances/$INSTANCE_ID" \
     -H "Authorization: Bearer $PLATFORM_SERVICE_TOKEN" \
@@ -248,9 +255,31 @@ MODEL_SECRET_RESPONSE="$(api_get_integration_secret_response llm_provider)"
 MODEL_SECRET_STATUS="$(printf '%s\n' "$MODEL_SECRET_RESPONSE" | tail -n1)"
 MODEL_SECRET_BODY="$(printf '%s\n' "$MODEL_SECRET_RESPONSE" | sed '$d')"
 INSTANCE_MINIMAX_API_KEY=""
+MAILBOX_SECRET_RESPONSE="$(api_get_mailbox_runtime_secret_response)"
+MAILBOX_SECRET_STATUS="$(printf '%s\n' "$MAILBOX_SECRET_RESPONSE" | tail -n1)"
+MAILBOX_SECRET_BODY="$(printf '%s\n' "$MAILBOX_SECRET_RESPONSE" | sed '$d')"
+INSTANCE_AGENTMAIL_API_KEY=""
+INSTANCE_AGENTMAIL_POD_ID=""
+INSTANCE_AGENTMAIL_API_KEY_ID=""
+INSTANCE_AGENTMAIL_INBOX_ID=""
+INSTANCE_AGENTMAIL_EMAIL_ADDRESS=""
+INSTANCE_AGENTMAIL_USERNAME=""
+INSTANCE_AGENTMAIL_DOMAIN=""
 
 if [[ "$MODEL_SECRET_STATUS" == "200" ]]; then
   INSTANCE_MINIMAX_API_KEY="$(echo "$MODEL_SECRET_BODY" | jq -r '.minimaxApiKey // empty')"
+fi
+
+if [[ "$MAILBOX_SECRET_STATUS" == "200" ]]; then
+  INSTANCE_AGENTMAIL_API_KEY="$(echo "$MAILBOX_SECRET_BODY" | jq -r '.apiKey // empty')"
+  INSTANCE_AGENTMAIL_POD_ID="$(echo "$MAILBOX_SECRET_BODY" | jq -r '.providerPodId // empty')"
+  INSTANCE_AGENTMAIL_API_KEY_ID="$(echo "$MAILBOX_SECRET_BODY" | jq -r '.providerApiKeyId // empty')"
+  INSTANCE_AGENTMAIL_INBOX_ID="$(echo "$MAILBOX_SECRET_BODY" | jq -r '.providerInboxId // empty')"
+  INSTANCE_AGENTMAIL_EMAIL_ADDRESS="$(echo "$MAILBOX_SECRET_BODY" | jq -r '.emailAddress // empty')"
+  INSTANCE_AGENTMAIL_USERNAME="$(echo "$MAILBOX_SECRET_BODY" | jq -r '.username // empty')"
+  INSTANCE_AGENTMAIL_DOMAIN="$(echo "$MAILBOX_SECRET_BODY" | jq -r '.domain // empty')"
+elif [[ "$MAILBOX_SECRET_STATUS" != "404" ]]; then
+  echo "Warning: Could not load AgentMail runtime secret from platform (HTTP $MAILBOX_SECRET_STATUS)."
 fi
 
 echo "  Instance: $SLUG ($CUSTOMER_NAME)"
@@ -409,6 +438,13 @@ CONTROL_PLANE_URL=${PLATFORM_URL}
 RUNTIME_SYNC_TOKEN=${RUNTIME_SYNC_TOKEN}
 CUSTOMER_TIMEZONE=${CUSTOMER_TIMEZONE}
 TEMPLATE_RUNTIME_PORT=3001
+AGENTMAIL_API_KEY=${INSTANCE_AGENTMAIL_API_KEY}
+AGENTMAIL_POD_ID=${INSTANCE_AGENTMAIL_POD_ID}
+AGENTMAIL_API_KEY_ID=${INSTANCE_AGENTMAIL_API_KEY_ID}
+AGENTMAIL_INBOX_ID=${INSTANCE_AGENTMAIL_INBOX_ID}
+AGENTMAIL_EMAIL_ADDRESS=${INSTANCE_AGENTMAIL_EMAIL_ADDRESS}
+AGENTMAIL_INBOX_USERNAME=${INSTANCE_AGENTMAIL_USERNAME}
+AGENTMAIL_INBOX_DOMAIN=${INSTANCE_AGENTMAIL_DOMAIN}
 EOF
 
 echo "Secrets written to secrets/openclaw.env"
